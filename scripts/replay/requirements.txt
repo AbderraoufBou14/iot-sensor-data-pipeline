@@ -1,0 +1,4 @@
+kafka-python
+s3fs
+python-dotenv
+confluent-kafka
