@@ -1,7 +1,7 @@
 services:
   kafka:
     image: confluentinc/cp-kafka:7.4.0
-    container_name: kafka
+    container_name: iot_kafka_brocker
     restart: unless-stopped
     ports:
       - "9092:9092"
@@ -22,24 +22,65 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       KAFKA_NUM_PARTITIONS: 3
 
-      # Répertoires internes KRaft
       KAFKA_LOG_DIRS: /var/lib/kafka/data
-      CLUSTER_ID: "abcdefghijklmnopqrstuv"  # identifiant KRaft simple et fixe
-
+      CLUSTER_ID: "abcdefghijklmnopqrstuv"
+    networks:
+      - kafka-net
     volumes:
       - kafka_data:/var/lib/kafka/data
 
+  topics-init:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/producer.Dockerfile
+    container_name: iot_kafka_topics_init
+    depends_on:
+      - kafka
+    env_file:
+      - ../../.env
+    environment:
+      # Adresse interne du broker Kafka vue depuis les conteneurs
+      KAFKA_BOOTSTRAP: "kafka:29092"
+    command: ["sh", "-c", "sleep 10 && python -u replay/create_topics.py"]
+    networks:
+      - kafka-net
+    restart: "no"
+
+  producer:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/producer.Dockerfile
+    container_name: iot_kafka_producer
+    depends_on:
+      - kafka
+      - topics-init
+    env_file:
+      - ../../.env 
+    environment:
+      # Adresse interne du broker Kafka vue depuis les conteneurs
+      KAFKA_BOOTSTRAP: "kafka:29092"
+    command: ["sh", "-c", "sleep 10 && python -u replay/producer.py"]
+    networks:
+      - kafka-net
+    restart: "no"   # batch (replay -> fin -> arrêt)
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
-    container_name: kafka-ui
+    container_name: iot_kafka_ui
     restart: unless-stopped
     ports:
       - "8081:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    networks:
+      - kafka-net
     depends_on:
       - kafka
 
 volumes:
   kafka_data:
+
+networks:
+  kafka-net:
+    driver: bridge

@@ -1,176 +1,244 @@
-import csv
-import json
-import os
-import time
-from urllib.parse import urljoin
+import os, csv, json, time, heapq
+from typing import Iterator, List, Tuple, Dict
 
 from dotenv import load_dotenv
 from kafka import KafkaProducer
+import s3fs
 
-import s3fs  # <-- clé: lecture directe S3
+load_dotenv(override=False)
 
-load_dotenv()
-
-# ===== Config =====
+# --- ENV (valeurs par défaut pour le fallback) ---
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 ACKS = os.getenv("ACKS", "all")
-COMPRESSION_TYPE = os.getenv("COMPRESSION_TYPE", "snappy")
 LINGER_MS = int(os.getenv("LINGER_MS", "20"))
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "32768"))
 
 TOPIC_CO2 = os.getenv("TOPIC_CO2", "iot.co2")
 TOPIC_PIR = os.getenv("TOPIC_PIR", "iot.pir")
-TOPIC_BY_SENSOR = {"co2": TOPIC_CO2, "pir": TOPIC_PIR}
+TOPIC_LUMINOSITY = os.getenv("TOPIC_LUMINOSITY", "iot.luminosity")
+TOPIC_TEMPERATURE = os.getenv("TOPIC_TEMPERATURE", "iot.temperature")
+TOPIC_HUMIDITY = os.getenv("TOPIC_HUMIDITY", "iot.humidity")
+TOPIC_DEFAULT = os.getenv("TOPIC_DEFAULT", "iot.sensor")
 
 SENSORS = [s.strip().lower() for s in os.getenv("SENSORS", "co2,pir").split(",") if s.strip()]
 ROOMS = [r.strip() for r in os.getenv("ROOMS", "").split(",") if r.strip()]
 
-SOURCE_URL = os.getenv("SOURCE_URL")  # ex: s3://bucket/prefix
-if not SOURCE_URL or not SOURCE_URL.startswith("s3://"):
-    raise SystemExit("SOURCE_URL doit être un préfixe S3 (ex: s3://mon-bucket/raw)")
+SOURCE_URL = os.getenv("SOURCE_URL", "s3://datalake-iot-smart-building/raw/KETI/")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "eu-west-3")
 
-REPLAY_MODE = os.getenv("REPLAY_MODE", "rate")  # rate | timewarp
-RATE_MSG_PER_SEC = float(os.getenv("RATE_MSG_PER_SEC", "50"))
-TIMEWARP_FACTOR = float(os.getenv("TIMEWARP_FACTOR", "10"))
+REPLAY_MODE = os.getenv("REPLAY_MODE", "timewarp").lower()        # "rate" | "timewarp"
+RATE_MSG_PER_SEC = float(os.getenv("RATE_MSG_PER_SEC", "5"))      # rate only
+TIMEWARP_FACTOR = float(os.getenv("TIMEWARP_FACTOR", "10"))       # timewarp only
+PROGRESS_EVERY = int(os.getenv("PROGRESS_EVERY", "10"))
 
-MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
-SLEEP_ON_ERROR_MS = int(os.getenv("SLEEP_ON_ERROR_MS", "250"))
+# Topics par capteur normalisé
+TOPIC_BY_SENSOR = {
+    "co2": TOPIC_CO2,
+    "pir": TOPIC_PIR,
+    "luminosity": TOPIC_LUMINOSITY,
+    "temperature": TOPIC_TEMPERATURE,
+    "humidity": TOPIC_HUMIDITY,
+}
 
-AWS_REGION = os.getenv("AWS_REGION", None)  # utile localement
+# Alias simples
+SENSOR_ALIASES: Dict[str, List[str]] = {
+    "co2": ["co2"],
+    "pir": ["pir", "motion"],
+    "luminosity": ["light", "luminosity"],
+    "temperature": ["temperature", "temp"],
+    "humidity": ["humidity", "hum", "rh"],
+}
 
-# ===== Kafka =====
-def build_producer():
+# --- Helpers ---
+def coerce_ts_unix(raw) -> int:
+    x = float(raw)
+    if x > 1e15:   # µs
+        return int(x / 1e6)
+    if x > 1e12:   # ms
+        return int(x / 1e3)
+    return int(x)  # s
+
+def build_fs() -> s3fs.S3FileSystem:
+    return s3fs.S3FileSystem(
+        key=AWS_ACCESS_KEY_ID,
+        secret=AWS_SECRET_ACCESS_KEY,
+        client_kwargs={"region_name": AWS_DEFAULT_REGION},
+    )
+
+def build_producer() -> KafkaProducer:
     return KafkaProducer(
         bootstrap_servers=KAFKA_BOOTSTRAP,
         acks=ACKS,
-        compression_type=COMPRESSION_TYPE,
         linger_ms=LINGER_MS,
         batch_size=BATCH_SIZE,
-        value_serializer=lambda d: json.dumps(d).encode("utf-8"),
-        key_serializer=lambda s: s.encode("utf-8"),
+        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+        key_serializer=lambda k: k.encode("utf-8") if isinstance(k, str) else k,
     )
 
-# ===== S3 =====
-def build_s3fs():
-    # S3FileSystem utilisera automatiquement: IAM Role (prod) OU variables d’env si présentes (local)
-    return s3fs.S3FileSystem(client_kwargs={"region_name": AWS_REGION} if AWS_REGION else {})
+def normalize_sensor_from_filename(filename: str) -> str | None:
+    name = filename.lower()
+    for norm, aliases in SENSOR_ALIASES.items():
+        if any(a in name for a in aliases):
+            return norm
+    return None
 
-def iter_files_s3(fs: s3fs.S3FileSystem):
-    """
-    Cherche des chemins de type: s3://bucket/prefix/<room>/<sensor>.csv
-    - Si ROOMS non vide: filtre uniquement ces rooms
-    - Sinon: autodétecte les rooms comme sous-prefixes de SOURCE_URL
-    """
-    base = SOURCE_URL.rstrip("/")
-    sensors = set(SENSORS)
+def iter_files_s3(fs: s3fs.S3FileSystem) -> Iterator[Tuple[str, str, str]]:
+    candidates = fs.glob(f"{SOURCE_URL}*/*.csv")
+    wanted = set(SENSORS) if SENSORS else set()
+    for path in sorted(candidates):
+        room = os.path.basename(os.path.dirname(path))
+        filename = os.path.splitext(os.path.basename(path))[0]
+        if ROOMS and room not in ROOMS:
+            continue
+        sensor = normalize_sensor_from_filename(filename)
+        if sensor is None:
+            continue
+        if wanted and sensor not in wanted:
+            continue
+        yield (room, sensor, path)
 
-    rooms_to_scan = ROOMS
-    if not rooms_to_scan:
-        # autodétecter les rooms: liste des sous-dossiers immédiats
-        # s3fs.glob renvoie des chemins complets s3://...
-        pattern = f"{base}/*"
-        candidates = fs.glob(pattern)
-        rooms_to_scan = [p.split("/")[-1] for p in candidates if fs.isdir(p)]
-
-    for room in rooms_to_scan:
-        for sensor in sensors:
-            path = f"{base}/{room}/{sensor}.csv"
-            if fs.exists(path):
-                yield room, sensor, path
-
-# ===== Timing =====
-def coerce_ts_unix(x: str) -> int:
-    ts = int(float(x))
-    if ts > 10**12:  # ms -> s
-        ts //= 1000
-    return ts
-
-def rate_sleep():
-    if RATE_MSG_PER_SEC > 0:
-        time.sleep(1.0 / RATE_MSG_PER_SEC)
-
-def timewarp_sleep(prev_ts, curr_ts):
-    if prev_ts is None:
-        return
-    delta = max(0, curr_ts - prev_ts)
-    scaled = delta / max(1.0, TIMEWARP_FACTOR)
-    if scaled > 0:
-        time.sleep(scaled)
-
-# ===== Publish =====
-def publish_csv_s3(fs: s3fs.S3FileSystem, producer, room_id, sensor, s3_path: str):
-    topic = TOPIC_BY_SENSOR.get(sensor)
-    if not topic:
-        print(f"[WARN] Pas de topic pour '{sensor}', ignoré: {s3_path}")
-        return 0
-
-    sensor_id = f"{room_id}_{sensor}"
-    seq = 0
-    prev_ts = None
-    sent = 0
-
-    # Ouverture streaming depuis S3
+def iter_csv_s3(fs: s3fs.S3FileSystem, s3_path: str) -> Iterator[List[str]]:
     with fs.open(s3_path, "r") as f:
         reader = csv.reader(f)
         for row in reader:
-            if not row:
+            if len(row) < 2: 
                 continue
-
-            raw_ts = row[0]
-            raw_val = row[1] if len(row) > 1 else None
-            if raw_val is None:
-                continue
-
             try:
-                ts_unix = coerce_ts_unix(raw_ts)
-                value = int(float(raw_val)) if sensor == "pir" else float(raw_val)
-            except Exception as e:
-                print(f"[WARN] Ligne ignorée ({s3_path}): {row} | err={e}")
+                float(row[0])
+            except Exception:
                 continue
+            yield row
 
-            msg = {
-                "sensor_type": sensor,
-                "sensor_id": sensor_id,
-                "ts_unix": ts_unix,
-                "value": value,
-                "source_file": s3_path.split("/")[-1],
-                "seq": seq,
-            }
+def format_mode() -> str:
+    return f"rate {int(RATE_MSG_PER_SEC)}/s" if REPLAY_MODE == "rate" else f"timewarp x{int(TIMEWARP_FACTOR)}"
 
-            # Envoi (retries simples)
-            for attempt in range(MAX_RETRIES + 1):
-                try:
-                    producer.send(topic, key=sensor_id, value=msg)
-                    break
-                except Exception as e:
-                    if attempt >= MAX_RETRIES:
-                        print(f"[ERROR] Envoi échoué après retries: {e}")
-                        raise
-                    time.sleep(SLEEP_ON_ERROR_MS / 1000.0)
+def print_progress(sensor_counts: Dict[str, int], total: int) -> None:
+    parts = [f"{k}={v}" for k, v in sensor_counts.items()]
+    print("\r" + f"[{format_mode()}] " + " | ".join(parts) + f" (total={total})", end="", flush=True)
 
-            # Contrôle du rythme
-            if REPLAY_MODE == "rate":
-                rate_sleep()
-            elif REPLAY_MODE == "timewarp":
-                timewarp_sleep(prev_ts, ts_unix)
+# --- Orchestration ---
+def run_timewarp(fs: s3fs.S3FileSystem, producer: KafkaProducer) -> int:
+    # streams: [room, sensor, path, iterator, prev_ts, sent_count]
+    streams: List[List] = []
+    for room, sensor, path in iter_files_s3(fs):
+        streams.append([room, sensor, path, iter_csv_s3(fs, path), None, 0])
+    
+    
+    if not streams:
+        print("[WARN] No data streams found."); return 0
 
-            prev_ts = ts_unix
-            seq += 1
-            sent += 1
+    now = time.time()
+    heap: List[Tuple[float, int, dict]] = []
+    sensor_counts: Dict[str, int] = {}
 
-    producer.flush()
-    print(f"[OK] {s3_path} → topic={topic} | envoyés={sent}")
-    return sent
-
-def main():
-    fs = build_s3fs()
-    producer = build_producer()
+    # init
+    for i, (room, sensor, path, it, prev_ts, sent) in enumerate(streams):
+        try:
+            row = next(it)
+            ts = coerce_ts_unix(row[0])
+            val = int(float(row[1])) if sensor == "pir" else float(row[1])
+            heapq.heappush(heap, (now, i, {"room": room, "sensor": sensor, "ts": ts, "value": val}))
+            streams[i][4] = ts
+            sensor_counts.setdefault(sensor, 0)
+        except StopIteration:
+            continue
+        except Exception:
+            continue
 
     total = 0
-    for room, sensor, s3_path in iter_files_s3(fs):
-        total += publish_csv_s3(fs, producer, room, sensor, s3_path)
+    print(f"[INFO] Capteurs actifs: {len(streams)}")
+    
+    while heap:
+        send_time, i, msg = heapq.heappop(heap)
+        delay = send_time - time.time()
+        if delay > 0: time.sleep(delay)
 
+        topic = TOPIC_BY_SENSOR.get(msg["sensor"], TOPIC_DEFAULT)
+        key = f"{msg['room']}:{msg['sensor']}"
+        producer.send(topic, value=msg, key=key)
+        total += 1
+        sensor_counts[msg["sensor"]] = sensor_counts.get(msg["sensor"], 0) + 1
+        streams[i][5] += 1
+        
+        if total % PROGRESS_EVERY == 0:
+            print_progress(sensor_counts, total)
+
+        room, sensor, path, it, prev_ts, sent_count = streams[i]
+        try:
+            row = next(it)
+            ts_next = coerce_ts_unix(row[0])
+            val = int(float(row[1])) if sensor == "pir" else float(row[1])
+            delta = 0 if prev_ts is None else max(ts_next - prev_ts, 0)
+            interval = float(delta) / max(TIMEWARP_FACTOR, 1.0)
+            next_send = max(send_time, time.time()) + interval
+            heapq.heappush(heap, (next_send, i, {"room": room, "sensor": sensor, "ts": ts_next, "value": val}))
+            streams[i][4] = ts_next
+        except StopIteration:
+            print(f"[END] room={room} sensor={sensor} file={path} — sent={sent_count}")
+        except Exception:
+            pass
+
+    print_progress(sensor_counts, total); print()
+    producer.flush()
+    print(f"[END] flush() — total sent={total}")
+    return total
+
+def run_rate(fs: s3fs.S3FileSystem, producer: KafkaProducer) -> int:
+    streams: List[Tuple[str, str, Iterator[List[str]]]] = []
+    for room, sensor, path in iter_files_s3(fs):
+        streams.append((room, sensor, iter_csv_s3(fs, path)))
+
+    if not streams:
+        print("[WARN] No data streams found."); return 0
+
+    sensor_counts: Dict[str, int] = {s:0 for _, s, _ in streams}
+    total = 0
+    idx = 0
+    interval = 1.0 / max(RATE_MSG_PER_SEC, 1.0)
+
+    for room, sensor, _ in streams:
+        print(f"[START] room={room} sensor={sensor}")
+
+    while streams:
+        room, sensor, it = streams[idx]
+        try:
+            row = next(it)
+        except StopIteration:
+            streams.pop(idx)
+            if not streams: break
+            idx %= len(streams); continue
+
+        ts = coerce_ts_unix(row[0])
+        val = int(float(row[1])) if sensor == "pir" else float(row[1])
+        topic = TOPIC_BY_SENSOR.get(sensor, TOPIC_DEFAULT)
+        key = f"{room}:{sensor}"
+        producer.send(topic, value={"room": room, "sensor": sensor, "ts": ts, "value": val}, key=key)
+
+        total += 1
+        sensor_counts[sensor] = sensor_counts.get(sensor, 0) + 1
+        if total % PROGRESS_EVERY == 0:
+            print_progress(sensor_counts, total)
+
+        idx = (idx + 1) % len(streams)
+        time.sleep(interval)
+
+    print_progress(sensor_counts, total); print()
+    producer.flush()
+    print(f"[END] flush() — total sent={total}")
+    return total
+
+def main():
+    fs = build_fs()
+    producer = build_producer()
+    if REPLAY_MODE == "timewarp":
+        print(f"mode={REPLAY_MODE} timewarp_factor={TIMEWARP_FACTOR}")
+    else: 
+        print(f"mode={REPLAY_MODE} rate={RATE_MSG_PER_SEC}/s")
+    total = run_rate(fs, producer) if REPLAY_MODE == "rate" else run_timewarp(fs, producer)
     print(f"[DONE] Messages envoyés: {total}")
+    producer.close()
 
 if __name__ == "__main__":
     main()
