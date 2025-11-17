@@ -1,0 +1,15 @@
+services: 
+  consumer:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/consumer.Dockerfile
+    container_name: iot_spark_consumer
+    env_file:
+      - ../../.env
+    restart: unless-stopped
+    networks:
+      - kafka-net
+
+networks:
+  kafka-net:
+    driver: bridge
