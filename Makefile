@@ -1,60 +1,90 @@
-# Fichier docker-compose à utiliser pour l'infra Kafka
-COMPOSE_FILE=./infrastructure/compose/kafka.compose.yml
-COMPOSE=docker compose -f $(COMPOSE_FILE)
+# === Docker Compose Files ===
+KAFKA_COMPOSE=./infrastructure/compose/kafka.compose.yml
+SPARK_COMPOSE=./infrastructure/compose/spark.compose.yml
 
-.PHONY: up down logs restart ps \
-        up-% down-% logs-% restart-% \
-        build build-% rebuild rebuild-%
+# Commandes Compose
+KAFKA=docker compose -f $(KAFKA_COMPOSE)
+SPARK=docker compose -f $(SPARK_COMPOSE)
 
-# === Actions sur l'ensemble des conteneurs ===
+.PHONY: \
+    up down logs restart ps \
+    up-all down-all logs-all restart-all build-all rebuild-all \
+    kafka-up kafka-down kafka-logs kafka-restart kafka-ps \
+    spark-up spark-down spark-logs spark-restart spark-ps \
+    kafka-build kafka-build-% kafka-rebuild kafka-rebuild-% \
+    spark-build spark-build-% spark-rebuild spark-rebuild-%
 
-up:
-	$(COMPOSE) up -d
 
-down:
-	$(COMPOSE) down
+#  ACTIONS GLOBALES SUR KAFKA
 
-logs:
-	$(COMPOSE) logs -f
+kafka-up:
+	$(KAFKA) up -d
 
-restart:
-	$(COMPOSE) restart
+kafka-down:
+	$(KAFKA) down
 
-ps:
-	$(COMPOSE) ps
+kafka-logs:
+	$(KAFKA) logs -f
 
-# === Build des images ===
+kafka-restart:
+	$(KAFKA) restart
 
-# Build de toutes les images définies dans le compose
-build:
-	$(COMPOSE) build
+kafka-ps:
+	$(KAFKA) ps
 
-# Build d'un service spécifique
-# Exemple : make build-kafka, make build-kafka-ui
-build-%:
-	$(COMPOSE) build $*
+kafka-build:
+	$(KAFKA) build
 
-# Rebuild complet (sans cache) de toutes les images
-rebuild:
-	$(COMPOSE) build --no-cache
+kafka-build-%:
+	$(KAFKA) build $*
 
-# Rebuild (sans cache) d'un service spécifique
-# Exemple : make rebuild-kafka
-rebuild-%:
-	$(COMPOSE) build --no-cache $*
+kafka-rebuild:
+	$(KAFKA) build --no-cache
 
-# === Actions sur un conteneur spécifique (service) ===
-# Exemple : make up-kafka      -> démarre seulement le service "kafka"
-#           make logs-kafka-ui -> suit les logs du service "kafka-ui"
+kafka-rebuild-%:
+	$(KAFKA) build --no-cache $*
 
-up-%:
-	$(COMPOSE) up -d $*
 
-down-%:
-	$(COMPOSE) stop $*
+# ACTIONS GLOBALES SUR SPARK
 
-logs-%:
-	$(COMPOSE) logs -f $*
 
-restart-%:
-	$(COMPOSE) restart $*
+spark-up:
+	$(SPARK) up -d
+
+spark-down:
+	$(SPARK) down
+
+spark-logs:
+	$(SPARK) logs -f
+
+spark-restart:
+	$(SPARK) restart
+
+spark-ps:
+	$(SPARK) ps
+
+spark-build:
+	$(SPARK) build
+
+spark-build-%:
+	$(SPARK) build $*
+
+spark-rebuild:
+	$(SPARK) build --no-cache
+
+spark-rebuild-%:
+	$(SPARK) build --no-cache $*
+
+#COMMANDES "ALL" POUR TOUTES LES INFRASTRUCTURES
+
+up-all:
+	$(KAFKA) up -d
+	$(SPARK) up -d
+
+down-all:
+	$(KAFKA) down
+	$(SPARK) down
+
+restart-all:
+	$(KAFKA) restart
+	$(SPARK) restart
