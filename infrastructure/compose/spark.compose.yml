@@ -7,6 +7,21 @@ services:
     env_file:
       - ../../.env
     restart: unless-stopped
+    # On lance le job consumer
+    command: ["jobs/consumer.py"]
+    networks:
+      - kafka-net
+
+  silver:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/consumer.Dockerfile
+    container_name: iot_spark_silver
+    env_file:
+      - ../../.env
+    restart: unless-stopped
+    # On lance le job silver
+    command: ["jobs/silver_job.py"]
     networks:
       - kafka-net
 

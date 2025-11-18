@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY spark/jobs ./jobs/
 
-ENTRYPOINT ["python3", "-u", "jobs/consumer.py"]
+ENTRYPOINT ["python3", "-u"]
