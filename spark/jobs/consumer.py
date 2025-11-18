@@ -22,8 +22,6 @@ KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "iot.sensors")
 BRONZE_PATH = os.getenv("BRONZE_PATH", "s3a://datalake-iot-smart-building/bronze/",)
 CHECKPOINT_PATH = os.getenv("CHECKPOINT_PATH", "s3a://datalake-iot-smart-building/bronze/checkpoints/consumer_iot")
 
-SPARK_APP_NAME = os.getenv("SPARK_APP_NAME", "iot_kafka_consumer")
-
 SPARK_KAFKA_PACKAGE = os.getenv("SPARK_KAFKA_PACKAGE", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.1")
 
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -56,7 +54,7 @@ def build_spark_session() -> SparkSession:
     ]
 
     spark = (
-        SparkSession.builder.appName(SPARK_APP_NAME)
+        SparkSession.builder.appName("iot_kafka_consumer")
         .config("spark.jars.packages", ",".join(extra_packages))
         .getOrCreate()
     )
@@ -126,6 +124,7 @@ def transform_to_bronze(df_raw):
     )
 
     return df_bronze
+
 
 
 def write_stream_to_bronze(df_bronze):
