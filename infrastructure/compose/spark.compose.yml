@@ -24,6 +24,19 @@ services:
     command: ["jobs/silver_job.py"]
     networks:
       - kafka-net
+  
+  gold:
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/consumer.Dockerfile
+    container_name: iot_spark_gold
+    env_file:
+      - ../../.env
+    # IMPORTANT : processus batch, pas de restart en continu
+    restart: "no"
+    command: ["jobs/gold_job.py", "--date", "2013-08-23"]
+    networks:
+      - kafka-net
 
 networks:
   kafka-net:
