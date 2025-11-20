@@ -1,0 +1,22 @@
+from fastapi import FastAPI
+
+from app.routers import health, silver
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="IoT Silver API",
+        version="0.1.0",
+        description="API détaillée pour explorer les données Silver du projet IoT.",
+    )
+
+    @app.get("/", tags=["root"])
+    def root():
+        return {"message": "IoT Silver API - see /docs"}
+
+    # Mount routers (sans préfix v1)
+    app.include_router(health.router)
+    app.include_router(silver.router, prefix="/silver")
+
+    return app
+
+app = create_app()

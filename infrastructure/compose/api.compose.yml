@@ -1,0 +1,24 @@
+services:
+  api:
+    build:
+      context: ../..                
+      dockerfile: infrastructure/docker/api.Dockerfile
+    image: api_iot_img:latest
+    container_name: api_iot
+    restart: unless-stopped
+    env_file:
+      - ../../.env                   
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ml_models_vol:/ml_models:ro   
+    networks:
+      - kafka-net
+
+volumes:
+  ml_models_vol:
+    name: ml_models_vol
+
+networks:
+  kafka-net:
+    driver: bridge

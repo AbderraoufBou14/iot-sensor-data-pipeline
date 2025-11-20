@@ -10,7 +10,7 @@ load_dotenv()
 
 # Paths Datalake
 SILVER_PATH = os.getenv("SILVER_PATH", "s3a://datalake-iot-smart-building/silver/")
-GOLD_BASE_PATH = os.getenv("GOLD_BASE_PATH", "s3a://datalake-iot-smart-building/gold/")
+GOLD_PATH = os.getenv("GOLD_PATH", "s3a://datalake-iot-smart-building/gold/")
 
 # AWS
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -82,13 +82,7 @@ def read_silver_for_date(spark: SparkSession, process_date: str):
 
 # 4. Agrégats horaires
 def build_hourly_aggregates(df_silver, process_date: str):
-    """
-    - On force event_date = process_date pour TOUTES les lignes lues.
-    - On crée hour_utc à partir de ts_utc.
-    """
-    df = df_silver.withColumn(
-        "event_date", F.lit(process_date).cast("date")
-    )
+    df = df_silver.withColumn("event_date", F.lit(process_date).cast("date"))
 
     df = df.withColumn("hour_utc", F.date_trunc("hour", "ts_utc"))
 
@@ -253,8 +247,8 @@ def main():
     df_hourly = build_hourly_aggregates(df_silver, process_date)
     df_daily = build_daily_room_metrics(df_hourly)
 
-    hourly_output = os.path.join(GOLD_BASE_PATH, "sensor_timeseries_hourly")
-    daily_output = os.path.join(GOLD_BASE_PATH, "room_daily_metrics")
+    hourly_output = os.path.join(GOLD_PATH, "sensor_timeseries_hourly")
+    daily_output = os.path.join(GOLD_PATH, "room_daily_metrics")
 
     write_parquet_partitioned(df_hourly, hourly_output, partition_col="event_date")
     write_parquet_partitioned(df_daily, daily_output, partition_col="event_date")
