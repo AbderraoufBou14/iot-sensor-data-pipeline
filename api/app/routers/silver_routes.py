@@ -14,14 +14,14 @@ router = APIRouter(tags=["silver"])
 
 @router.get("/rooms", response_model=RoomList)
 def get_rooms():
-    """Liste des rooms disponibles dans la couche Silver."""
+    """Liste des rooms disponibles"""
     rooms = list_rooms()
     return RoomList(rooms=rooms)
 
 
 @router.get("/sensor-types", response_model=SensorTypeList)
 def get_sensor_types():
-    """Liste des types de capteurs dans la couche Silver."""
+    """Liste des types de capteurs"""
     sensor_types = list_sensor_types()
     return SensorTypeList(sensor_types=sensor_types)
 

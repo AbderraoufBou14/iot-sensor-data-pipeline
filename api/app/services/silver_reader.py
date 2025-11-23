@@ -16,20 +16,11 @@ def _normalize_s3_uri(path: str) -> str:
 
 
 def _build_dataset_for_date(event_date: str) -> ds.Dataset:
-    """
-    Construit un Dataset PyArrow pour UNE date de partition.
-
-    SILVER_PATH doit pointer sur la racine 'silver/' :
-      s3://datalake-iot-smart-building/silver/
-
-    On construit ensuite :
-      s3://datalake-iot-smart-building/silver/event_date=YYYY-MM-DD/
-    """
+    """ Construit un Dataset PyArrow pour UNE date de partition"""
     settings = get_settings()
     root = _normalize_s3_uri(settings.SILVER_PATH).rstrip("/")
 
     path_for_date = f"{root}/event_date={event_date}/"
-
     dataset = ds.dataset(path_for_date, format="parquet")
     return dataset
 
@@ -42,12 +33,7 @@ def _parse_ts(ts_str: Optional[str]) -> Optional[datetime]:
 
 
 def list_rooms() -> List[str]:
-    """
-    Retourne la liste des rooms.
-
-    👉 Version simple : on lit une date fixe (2013-08-23) pour extraire les rooms.
-       On pourra optimiser plus tard si besoin.
-    """
+    """Retourne la liste des rooms """
     dataset = _build_dataset_for_date("2013-08-23")
     table = dataset.to_table(columns=["room"])
     rooms = table["room"].unique().to_pylist()
@@ -83,9 +69,7 @@ def get_readings(
     """
     settings = get_settings()
     max_limit = min(limit, settings.SILVER_MAX_LIMIT)
-
     dataset = _build_dataset_for_date(event_date)
-
     from_ts = _parse_ts(from_ts_str)
     to_ts = _parse_ts(to_ts_str)
 
@@ -94,7 +78,6 @@ def get_readings(
     if room is not None:
         expr = ds.field("room") == room
         filter_expr = expr if filter_expr is None else filter_expr & expr
-
     if sensor_type is not None:
         expr = ds.field("sensor_type") == sensor_type
         filter_expr = expr if filter_expr is None else filter_expr & expr
@@ -102,11 +85,9 @@ def get_readings(
     if from_ts is not None:
         expr = ds.field("ts_utc") >= from_ts
         filter_expr = expr if filter_expr is None else filter_expr & expr
-
     if to_ts is not None:
         expr = ds.field("ts_utc") <= to_ts
         filter_expr = expr if filter_expr is None else filter_expr & expr
-
     if only_valid:
         expr = ds.field("is_valid") == True  # noqa: E712
         filter_expr = expr if filter_expr is None else filter_expr & expr
@@ -121,20 +102,15 @@ def get_readings(
         "is_valid",
         "quality_flag",
     ]
-
-    # Scanner officiel PyArrow + head(max_limit)
     scanner = ds.Scanner.from_dataset(
         dataset,
         columns=wanted_cols,
         filter=filter_expr,
     )
     table = scanner.head(max_limit)
-
     df = table.to_pandas()
-
     if "ts_utc" in df.columns:
         df = df.sort_values("ts_utc")
-
     readings: List[Reading] = []
     for _, row in df.iterrows():
         readings.append(
@@ -149,5 +125,4 @@ def get_readings(
                 quality_flag=str(row.get("quality_flag")),
             )
         )
-
     return readings
