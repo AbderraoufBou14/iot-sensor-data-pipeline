@@ -12,10 +12,10 @@ from pyspark.sql.types import (
     LongType,
 )
 
-# --- Chargement du .env (depuis la racine du projet) ---
+#Chargement du .env 
 load_dotenv()
 
-# --- Config lue depuis les variables d'environnement ---
+# Config lue depuis les variables d'environnement 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "172.19.0.3:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "iot.sensors")
 
@@ -39,7 +39,7 @@ def get_bronze_schema() -> StructType:
         [
             StructField("room", StringType(), True),
             StructField("sensor", StringType(), True),
-            StructField("ts", LongType(), True),      # timestamp Unix en secondes
+            StructField("ts", LongType(), True),     
             StructField("value", DoubleType(), True),
         ]
     )
@@ -79,7 +79,7 @@ def read_stream_from_kafka(spark: SparkSession):
         spark.readStream.format("kafka")
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP)
         .option("subscribe", KAFKA_TOPIC)
-        .option("startingOffsets", "earliest")  # pratique pour rejouer l'historique
+        .option("startingOffsets", "earliest")  
         .option("failOnDataLoss", "false") 
         .load()
     )
@@ -138,7 +138,7 @@ def write_stream_to_bronze(df_bronze):
         .outputMode("append")
         .option("checkpointLocation", CHECKPOINT_PATH)
         .option("path", BRONZE_PATH)
-        .trigger(processingTime="10 seconds")  # micro-batch toutes les 10s
+        .trigger(processingTime="10 seconds")  
         .start()
     )
     return query
