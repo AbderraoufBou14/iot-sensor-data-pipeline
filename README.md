@@ -66,8 +66,23 @@ flowchart LR
 
 ## Captures d’écran
 
-[<img src="docs/screenshots/Airflow/Airflow_dags.png" width="150"/>](docs/screenshots/Airflow/Airflow_dags.png)
 
+[<img src="docs/screenshots/s3-1.png" width="150"/>](docs/screenshots/s3-1.png)
+[<img src="docs/screenshots/s3-2.png" width="150"/>](docs/screenshots/s3-2.png)
+[<img src="docs/screenshots/s3-4.png" width="150"/>](docs/screenshots/s3-4.png)
+
+[<img src="docs/screenshots/kafka-brocker-1.png" width="150"/>](docs/screenshots/kafka-brocker-1.png)
+[<img src="docs/screenshots/kafka-brocker.png" width="150"/>](docs/screenshots/kafka-brocker.png)
+
+[<img src="docs/screenshots/s3.png" width="150"/>](docs/screenshots/s3.png)
+[<img src="docs/screenshots/saprk.png" width="150"/>](docs/screenshots/saprk.png)
+[<img src="docs/screenshots/spark_2.png" width="150"/>](docs/screenshots/spark_2.png)
+
+[<img src="docs/screenshots/api-1.png" width="150"/>](docs/screenshots/api-1.png)
+[<img src="docs/screenshots/api-3.png" width="150"/>](docs/screenshots/api-3.png)
+[<img src="docs/screenshots/api.png" width="150"/>](docs/screenshots/api.png)
+
+[<img src="docs/screenshots/vscode.png" width="150"/>](docs/screenshots/vscode.png)
 
 ---
 ## 👨‍💻 Auteur
