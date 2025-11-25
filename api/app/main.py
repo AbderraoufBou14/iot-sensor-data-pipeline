@@ -7,7 +7,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="IoT Silver API",
         version="0.1.0",
-        description="API détaillée pour explorer les données Silver du projet IoT.",
+        description="API détaillée pour explorer les données dans la couche silver.",
     )
 
     @app.get("/", tags=["root"])

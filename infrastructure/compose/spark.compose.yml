@@ -7,10 +7,11 @@ services:
     env_file:
       - ../../.env
     restart: unless-stopped
-    # On lance le job consumer
     command: ["jobs/consumer.py"]
     networks:
       - kafka-net
+    ports:
+      - "4040:4040"
 
   silver:
     build:
@@ -20,10 +21,11 @@ services:
     env_file:
       - ../../.env
     restart: unless-stopped
-    # On lance le job silver
     command: ["jobs/silver_job.py"]
     networks:
       - kafka-net
+    ports:
+      - "4040:4040"
   
   gold:
     build:
@@ -32,11 +34,12 @@ services:
     container_name: iot_spark_gold
     env_file:
       - ../../.env
-    # IMPORTANT : processus batch, pas de restart en continu
     restart: "no"
     command: ["jobs/gold_job.py", "--date", "2013-08-23"]
     networks:
       - kafka-net
+    ports:
+      - "4040:4040"
 
 networks:
   kafka-net:

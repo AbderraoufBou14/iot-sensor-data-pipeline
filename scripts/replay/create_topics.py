@@ -13,13 +13,13 @@ def wait_for_kafka(timeout_sec: int = 30):
     while time.time() - start < timeout_sec:
         try:
             md = admin.list_topics(timeout=5)
-            print(f"✅ Kafka ready on {BOOTSTRAP} (brokers: {len(md.brokers)})")
+            print(f"Kafka ready on {BOOTSTRAP} (brokers: {len(md.brokers)})")
             return admin
         except KafkaException as e:
             print(f"⏳ Waiting for Kafka controller... ({e})")
             time.sleep(2)
 
-    print("⚠️ Kafka may not be fully ready, continuing anyway...")
+    print("Kafka may not be fully ready, continuing anyway...")
     return admin
 
 
@@ -40,18 +40,18 @@ def create_topics():
     for topic, future in futures.items():
         try:
             future.result()
-            print(f"✅ Topic created: {topic}")
+            print(f"Topic created: {topic}")
         except KafkaException as e:
             err = e.args[0]
             if err.code() == KafkaError.TOPIC_ALREADY_EXISTS:
-                print(f"⚠️ Topic {topic} already exists, skipping.")
+                print(f"Topic {topic} already exists, skipping.")
             elif err.code() == KafkaError._TIMED_OUT:
-                print(f"⚠️ Timeout while creating {topic}: {err}. "
+                print(f"Timeout while creating {topic}: {err}. "
                       f"Topic may already exist or Kafka was still starting.")
             else:
-                print(f"❌ Failed to create topic {topic}: {err}")
+                print(f"Failed to create topic {topic}: {err}")
         except Exception as e:
-            print(f"❌ Unexpected error for topic {topic}: {e}")
+            print(f"Unexpected error for topic {topic}: {e}")
 
 
 if __name__ == "__main__":

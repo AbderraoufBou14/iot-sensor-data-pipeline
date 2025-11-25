@@ -16,7 +16,6 @@ zookeeper-data/
 
 # Secrets
 .env
-.env.*
 *.key
 *.pem
 
