@@ -33,6 +33,9 @@ https://www.kaggle.com/datasets/mdelfavero/smart-building-system
 - Un premier job spark " micro batch" enrichit les données Bronze (room, sensor, qualité), calcule event_date et les écrit en Parquet. Le résultat est une couche Silver propre, partitioné par date , rapide et prete pour l'analyse.
 - Un deuxième job Spark "batch" agrège les données Silver en KPIs horaires et journalières par room, et les sauvegarde en tables Parquet prêtes à l’usage sur la couche Gold. Airflow  l'exécution de ce job quotidiennement.
 - Une API "FastApi" expose les données Silver du datalake S3 via des endpoints permettant de filtrer mesures et métadonnées. Elle offre un accès rapide aux lectures nettoyées par date, room et type de capteur. C’est la couche d’accès technique aux données brutes enrichies.
+
+**NB** : Ce smart building génère plus de 2 000 événements IoT chaque minute, issues 255 capteurs. Grâce à Kafka et Spark streaming, le pipeline maintient une latence de traitement d’environ 1 à 2 secondes, ce qui permet de suivre l’état du bâtiment en temps réel.
+
 ---
 
 ## 🏗️ Architecture globale du pipeline
@@ -85,6 +88,25 @@ flowchart LR
 [<img src="docs/screenshots/vscode.png" width="150"/>](docs/screenshots/vscode.png)
 
 ---
+
+## 🚀 Quickstart
+
+### 1. Prérequis
+
+- Docker et Docker Compose installés
+- Un fichier `.env` basé sur `.env.exemple` (S3, Kafka, API, etc.)
+
+### 2. Démarrer l’infrastructure.
+```bash
+# Exemple : En utilisant les commande makefile mise en place
+make up-kafka       # Kafka + UI
+make up-spark       # Consumer / jobs Spark
+make up-api         # API FastAPI
+```
+NB: Regardez le fichier makefile pour plus de détails sur ces commandes
+
+---
+
 ## 👨‍💻 Auteur
 
 **Abderraouf Boukarma**  
