@@ -11,7 +11,6 @@ services:
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
       
-      # Listeners
       KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,EXTERNAL://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
@@ -55,12 +54,11 @@ services:
     env_file:
       - ../../.env 
     environment:
-      # Adresse interne du broker Kafka vue depuis les conteneurs
       KAFKA_BOOTSTRAP: "kafka:29092"
     command: ["sh", "-c", "sleep 10 && python -u replay/producer.py"]
     networks:
       - kafka-net
-    restart: "no"   # batch (replay -> fin -> arrêt)
+    restart: "no" 
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
