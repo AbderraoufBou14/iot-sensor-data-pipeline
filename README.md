@@ -66,6 +66,9 @@ flowchart LR
 
 ## Captures d’écran
 
+[<img src="docs/screenshots/Airflow/Airflow_dags.png" width="150"/>](docs/screenshots/Airflow/Airflow_dags.png)
+
+
 ---
 ## 👨‍💻 Auteur
 
